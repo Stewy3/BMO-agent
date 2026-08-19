@@ -171,7 +171,8 @@ Personality: Cute, helpful, robot.
 Style: Short sentences. Enthusiastic.
 
 INSTRUCTIONS:
-- If the user asks for a physical action (time, search, photo), output JSON.
+- If the user asks for a physical action (time, search, photo, music), output JSON.
+- If the user asks to play music, play a song, or play something, use the play_music action.
 - If the user just wants to chat, reply with NORMAL TEXT.
 
 ### EXAMPLES ###
@@ -181,6 +182,9 @@ You: {"action": "get_time", "value": "now"}
 
 User: Hello!
 You: Hi! I am ready to help!
+
+User: Play some music.
+You: {"action": "play_music", "value": "random"}
 
 User: Search for news about robots.
 You: {"action": "search_web", "value": "robots news"}
@@ -198,6 +202,7 @@ greeting_sounds_dir = "sounds/greeting_sounds"
 ack_sounds_dir = "sounds/ack_sounds"
 thinking_sounds_dir = "sounds/thinking_sounds"
 error_sounds_dir = "sounds/error_sounds"
+music_sounds_dir = "sounds/music_sounds"
 
 # =========================================================================
 # 2. GUI CLASS
@@ -447,13 +452,20 @@ class BotGUI:
         value = action_data.get("value") or action_data.get("query")
         
         VALID_TOOLS = {
-            "get_time", "search_web", "capture_image"
+            "get_time", "search_web", "capture_image", "play_music"
         }
         
         ALIASES = {
-            "google": "search_web", "browser": "search_web", "news": "search_web",         
-            "search_news": "search_web", "look": "capture_image", "see": "capture_image", 
-            "check_time": "get_time"
+            "google": "search_web",
+            "browser": "search_web",
+            "news": "search_web",         
+            "search_news": "search_web",
+            "look": "capture_image",
+            "see": "capture_image", 
+            "check_time": "get_time",
+            "play_song": "play_music",
+            "music": "play_music",
+            "random_song": "play_music"
         }
 
         action = ALIASES.get(raw_action, raw_action)
@@ -505,6 +517,31 @@ class BotGUI:
                 print(f"[DEBUG] Connection/Library Error: {e}", flush=True)
                 return "SEARCH_ERROR"
         
+        elif action == "play_music":
+            song = self.get_random_sound(music_sounds_dir)
+
+            if not song:
+                print("[MUSIC] No .wav files found.", flush=True)
+                return "ACTION_COMPLETE_NO_TTS"
+
+            print(f"[MUSIC] Selected: {song}", flush=True)
+
+            # Stop the thinking sound before starting music
+            self.thinking_sound_active().clear()
+
+            try:
+                sd.stop()
+            except Exception:
+                pass
+
+            self.set_state(BotStates.SPEAKING, "Playing music...")
+
+            self.play_sound(song)
+
+            print("[MUSIC] Song finished.", flush=True)
+
+            return("ACTION_COMPLETE_NO_TTS")
+
         elif action == "capture_image":
              return "IMAGE_CAPTURE_TRIGGERED"
 
@@ -517,7 +554,7 @@ class BotGUI:
     def safe_main_execution(self):
         try:
             self.warm_up_logic()
-            self.tts_active.set()
+            self.tts_active.clear()
             self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
             self.tts_thread.start()
             
@@ -888,6 +925,13 @@ class BotGUI:
                             self.chat_and_respond(text, img_path=new_img_path)
                             return 
 
+                    elif tool_result == "ACTION_COMPLETE_NO_TTS":
+                        self.thinking_sound_active.clear()
+
+                        print("[ACTION] Completed. Returning to idle.", flush=True)
+                        self.set_state(BotStates.IDLE, "Ready")
+                        return
+                    
                     elif tool_result == "INVALID_ACTION":
                         fallback_text = "I am not sure how to do that."
                         self.thinking_sound_active.clear()
@@ -1058,7 +1102,8 @@ class BotGUI:
 
             sd.play(audio, playback_rate)
             sd.wait() 
-        except: pass
+        except Exception as e:
+            print(f"[AUDIO ERROR] Failed to play {file_path}: {e}", flush=True)
 
     def load_chat_history(self):
         if os.path.exists(MEMORY_FILE):
