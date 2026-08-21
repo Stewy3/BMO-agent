@@ -161,6 +161,7 @@ class BotStates:
     LISTENING = "listening"   
     THINKING = "thinking"     
     SPEAKING = "speaking"     
+    SINGING = "singing"     
     ERROR = "error"           
     CAPTURING = "capturing" 
     WARMUP = "warmup"       
@@ -356,7 +357,7 @@ class BotGUI:
                 self.ptt_event.set()
 
     def handle_speaking_interrupt(self, event=None):
-        if self.current_state == BotStates.SPEAKING or self.current_state == BotStates.THINKING:
+        if self.current_state in [BotStates.SPEAKING, BotStates.SINGING, BotStates.THINKING]:
             self.interrupted.set()
             self.thinking_sound_active.clear()
             with self.tts_queue_lock:
@@ -368,7 +369,7 @@ class BotGUI:
 
     def load_animations(self):
         base_path = "faces"
-        states = ["idle", "listening", "thinking", "speaking", "error", "capturing", "warmup"] 
+        states = ["idle", "listening", "thinking", "speaking", "singing", "error", "capturing", "warmup"] 
         for state in states:
             folder = os.path.join(base_path, state)
             self.animations[state] = []
@@ -392,16 +393,19 @@ class BotGUI:
             return
 
         if self.current_state == BotStates.SPEAKING:
+            speed = 50
             if len(frames) > 1:
                 self.current_frame_index = random.randint(1, len(frames) - 1)
             else:
                 self.current_frame_index = 0 
+        elif self.current_state == BotStates.SINGING:
+            speed = 100
+            self.current_frame_index = (self.current_frame_index + 1) % len(frames)
         else:
+            speed = 500
             self.current_frame_index = (self.current_frame_index + 1) % len(frames)
 
         self.background_label.config(image=frames[self.current_frame_index])
-        
-        speed = 50 if self.current_state == BotStates.SPEAKING else 500
         self.master.after(speed, self.update_animation)
 
     def set_state(self, state, msg="", cam_path=None):
@@ -527,14 +531,14 @@ class BotGUI:
             print(f"[MUSIC] Selected: {song}", flush=True)
 
             # Stop the thinking sound before starting music
-            self.thinking_sound_active().clear()
+            self.thinking_sound_active.clear()
 
             try:
                 sd.stop()
             except Exception:
                 pass
 
-            self.set_state(BotStates.SPEAKING, "Playing music...")
+            self.set_state(BotStates.SINGING, "Playing music...")
 
             self.play_sound(song)
 
