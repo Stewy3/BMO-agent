@@ -255,7 +255,7 @@ class BotGUI:
         self.oww_model = None
         if os.path.exists(WAKE_WORD_MODEL):
             try:
-                self.oww_model = Model(wakeword_model_paths=[WAKE_WORD_MODEL], inference_model="onnx")
+                self.oww_model = Model(wakeword_model_paths=[WAKE_WORD_MODEL], inference_framework="onnx")
                 print("[INIT] Wake Word Loaded (ONNX).", flush=True)
             except TypeError:
                 try:
