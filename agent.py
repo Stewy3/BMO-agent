@@ -46,6 +46,9 @@ import ollama
 # --- WEB SEARCH (Using your working import) ---
 from duckduckgo_search import DDGS 
 
+# --- Fast Actions to save Ollama time ---
+from fast_actions import detect_fast_action
+
 # =========================================================================
 # 1. CONFIGURATION & CONSTANTS
 # =========================================================================
@@ -252,8 +255,8 @@ class BotGUI:
         self.oww_model = None
         if os.path.exists(WAKE_WORD_MODEL):
             try:
-                self.oww_model = Model(wakeword_model_paths=[WAKE_WORD_MODEL])
-                print("[INIT] Wake Word Loaded.", flush=True)
+                self.oww_model = Model(wakeword_model_paths=[WAKE_WORD_MODEL], inference_model="onnx")
+                print("[INIT] Wake Word Loaded (ONNX).", flush=True)
             except TypeError:
                 try:
                     self.oww_model = Model(wakeword_models=[WAKE_WORD_MODEL])
@@ -873,8 +876,38 @@ class BotGUI:
         threading.Thread(target=self._run_thinking_sound_loop, daemon=True).start()
         
         full_response_buffer = ""
-        sentence_buffer = "" 
-        
+        sentence_buffer = ""
+
+        # -------------------------------------------------------------
+        # FAST LOCAL ACTION ROUTER to bypass Ollama for simple commands
+        # -------------------------------------------------------------
+        if img_path is None:
+            fast_action = detect_fast_action(text)
+            if fast_action:
+                # Handle the fast action
+                print(f"[FAST ACTION] {fast_action}", flush=True)
+                self.thinking_sound_active.clear()
+                tool_result = self.execute_action_and_get_result(fast_action)
+
+                #Actions such as music already handle themselves
+                if tool_result == "ACTION_COMPLETE_NO_TTS":
+                    self.set_state(BotStates.IDLE, "Ready")
+                    return
+
+                if tool_result == "IMAGE_CAPTURE_TRIGGERED":
+                    new_img_path = self.capture_image()
+                    if new_img_path:
+                        self.chat_and_respond(text, img_path=new_img_path)
+                        return
+
+                if tool_result:
+                    self.set_state(BotStates.SPEAKING, "Speaking...")
+                    self.append_to_text(f"BOT: {tool_result}")
+                    with self.tts_queue_lock: self.tts_queue.append(tool_result)
+                    self.wait_for_tts()
+                    self.set_state(BotStates.IDLE, "Ready")
+                    return
+
         try:
             stream = ollama.chat(model=model_to_use, messages=messages, stream=True, options=OLLAMA_OPTIONS)
             
